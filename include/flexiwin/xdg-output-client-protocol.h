@@ -111,7 +111,7 @@ extern const struct wl_interface zxdg_output_manager_v1_interface;
  * properties to be seen as atomic, even if they happen via multiple events.
  * @section page_iface_zxdg_output_v1_api API
  * See @ref iface_zxdg_output_v1.
- *
+ */
 /**
  * @defgroup iface_zxdg_output_v1 The zxdg_output_v1 interface
  *
