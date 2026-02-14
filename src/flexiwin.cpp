@@ -6,6 +6,8 @@
 #include <sys/mman.h>
 #include <time.h>
 #include <unistd.h>
+#include <wayland-client-core.h>
+#include <wayland-client-protocol.h>
 #include <wayland-client.h>
 
 static void randname(char *buf) {
@@ -21,7 +23,7 @@ static void randname(char *buf) {
 static void register_global(void *data, wl_registry *registry, uint32_t name,
                             const char *interface, uint32_t version) {
 
-  flexi::WMState *bypass = (flexi::WMState *)data;
+  flexiwin_state *bypass = (flexiwin_state *)data;
   if (strcmp(interface, wl_compositor_interface.name) == 0) {
     bypass->display_compositor = (wl_compositor *)wl_registry_bind(
         registry, name, &wl_compositor_interface, 6);
@@ -36,6 +38,7 @@ static void register_global(void *data, wl_registry *registry, uint32_t name,
   if (strcmp(interface, wl_shm_interface.name) == 0) {
     bypass->display_shm =
         (wl_shm *)wl_registry_bind(registry, name, &wl_shm_interface, 2);
+    wl_shm_add_listener(bypass->display_shm, &wl_shm_callback, data);
   }
 
   if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
@@ -72,129 +75,211 @@ static void remove_global(void *data, wl_registry *registry, uint32_t name) {
 static const struct wl_registry_listener display_registry_listener = {
     .global = register_global, .global_remove = remove_global};
 
-namespace flexi {
-int windowManager::allocateShm(WMState &state, int width, int height) {
+static int allocateShm(flexiwin_state *state, int width, int height,
+                       int tmp_size) {
 
-  if (flexi::minWindowWidth < 250 || flexi::minWindowHeight <= 250)
+  if (width < flexiwin_min_width || height < flexiwin_min_height)
     return -1;
 
   char name[] = "/wl_shm-XXXXXX";
   randname(name + sizeof(name) - 7);
 
-  state.shmFd = -1;
-  if ((state.shmFd = shm_open(name, O_RDWR | O_CREAT | O_EXCL, 0600)) < 0) {
+  state->shmFd = -1;
+  if ((state->shmFd = shm_open(name, O_RDWR | O_CREAT | O_EXCL, 0600)) < 0) {
     std::cout << "[SHM] Creation failed : " << std::endl;
     return -1;
   }
 
   shm_unlink(name);
-  if (ftruncate(state.shmFd, state.rawPixelSize) < 0) {
+  if (ftruncate(state->shmFd, tmp_size) < 0) {
     std::cout << "FD failed" << std::endl;
-    close(state.shmFd);
+    close(state->shmFd);
     return -1;
   }
-  state.rawPixelSize = sizeof(uint32_t) * width * height;
-  if ((state.rawPixels =
-           (uint32_t *)mmap(NULL, state.rawPixelSize, PROT_READ | PROT_WRITE,
-                            MAP_SHARED, state.shmFd, 0)) == MAP_FAILED) {
+
+  state->rawPixelSize = sizeof(uint32_t) * width * height;
+  if ((state->rawPixels =
+           (uint32_t *)mmap(NULL, state->rawPixelSize, PROT_READ | PROT_WRITE,
+                            MAP_SHARED, state->shmFd, 0)) == MAP_FAILED) {
     std::cout << "mapping failed " << std::endl;
-    close(state.shmFd);
+    close(state->shmFd);
     return -1;
   };
-
   return 0;
 };
 
-int windowManager::initlize(char *appname, int width, int height) {
+static void add_xdg_listeners(flexiwin_state *state, int32_t tmp_width,
+                              int32_t tmp_height) {
 
-  size_t len = strlen(appname);
-  wmState.appname = nullptr;
-  if ((wmState.appname = new (std::nothrow) char[len + 1]) == nullptr) {
-    return -1;
-  };
+  xdg_surface_add_listener(state->display_xdg_surface,
+                           &xdg_surface_callback_listener, state);
+  xdg_toplevel_add_listener(state->xdg_surface_toplevel,
+                            &xdg_surface_callback_listener_toplevel, state);
 
+  xdg_toplevel_set_max_size(state->xdg_surface_toplevel, tmp_height, tmp_width);
+
+  xdg_toplevel_set_min_size(state->xdg_surface_toplevel, flexiwin_min_width,
+                            flexiwin_min_height);
+};
+
+static int create_start_wayland(flexiwin_state *state) {
   if (keyboard_init() != 0)
     return -1;
 
-  if ((wmState.display = wl_display_connect(NULL)) == NULL)
+  if ((state->display = wl_display_connect(NULL)) == NULL)
     return -1;
 
-  wmState.displayFd = wl_display_get_fd(wmState.display);
-  wmState.readyMask |= FLEXI_DISPLAY_OK;
+  state->displayFd = wl_display_get_fd(state->display);
+  state->readyMask |= FLEXI_DISPLAY_OK;
 
-  if ((wmState.registry = wl_display_get_registry(wmState.display)) == NULL)
-    return destroy();
+  if ((state->registry = wl_display_get_registry(state->display)) == NULL)
+    return flexiwin_destroy(state, -1);
 
-  wmState.readyMask |= FLEXI_REGISTRY_OK;
+  state->readyMask |= FLEXI_REGISTRY_OK;
 
-  wl_registry_add_listener(wmState.registry, &display_registry_listener,
-                           &wmState);
-  wl_display_roundtrip(wmState.display);
+  wl_registry_add_listener(state->registry, &display_registry_listener, state);
+  wl_display_roundtrip(state->display);
 
-  if (wmState.display_compositor == NULL)
-    return destroy();
+  if (state->display_compositor == NULL)
+    return flexiwin_destroy(state, -1);
 
-  wmState.readyMask |= FLEXI_COMPOSITOR_OK;
+  state->readyMask |= FLEXI_COMPOSITOR_OK;
 
-  wmState.surface = wl_compositor_create_surface(wmState.display_compositor);
+  state->surface = wl_compositor_create_surface(state->display_compositor);
 
-  if (wmState.surface == NULL)
-    return destroy();
+  if (state->surface == NULL)
+    return flexiwin_destroy(state, -1);
 
-  wmState.readyMask |= FLEXI_SURFACE_OK;
-  wmState.display_xdg_surface =
-      xdg_wm_base_get_xdg_surface(wmState.display_xdg_base, wmState.surface);
+  state->readyMask |= FLEXI_SURFACE_OK;
+  state->display_xdg_surface =
+      xdg_wm_base_get_xdg_surface(state->display_xdg_base, state->surface);
 
-  if (wmState.display_xdg_surface == NULL)
-    return destroy();
+  if (state->display_xdg_surface == NULL)
+    return flexiwin_destroy(state, -1);
 
-  wmState.readyMask |= FLEXI_XDG_SURFACE_OK;
-  wmState.xdg_surface_toplevel =
-      xdg_surface_get_toplevel(wmState.display_xdg_surface);
+  state->readyMask |= FLEXI_XDG_SURFACE_OK;
+  state->xdg_surface_toplevel =
+      xdg_surface_get_toplevel(state->display_xdg_surface);
 
-  if (wmState.xdg_surface_toplevel == NULL)
-    return destroy();
-  wmState.readyMask |= FLEXI_XDG_TOPLEVEL_OK;
+  if (state->xdg_surface_toplevel == NULL)
+    return flexiwin_destroy(state, -1);
+  state->readyMask |= FLEXI_XDG_TOPLEVEL_OK;
 
-  wl_surface_commit(wmState.surface);
+  wl_surface_commit(state->surface);
 
   // TODO: rountrip
-  while (wl_display_roundtrip(wmState.display) != -1 && !wmState.configured) {
+  while (wl_display_dispatch(state->display) != -1 && !state->configured) {
   }
+  if (!(state->readyMask & FLEXI_XDG_WM_BASE_OK) ||
+      !(state->readyMask & FLEXI_FROMAT_OK))
+    return flexiwin_destroy(state, -1);
 
-  if (!(wmState.readyMask & FLEXI_XDG_WM_BASE_OK))
-    return destroy();
+  return 0;
+}
+int flexiwin_init(flexiwin_state *state, char *appname, int width, int height,
+                  window_mode mode, window_type type) {
+
+  if (width < flexiwin_min_width || height < flexiwin_min_height)
+    return -1;
+
+  size_t len = strlen(appname);
+  state->appname = nullptr;
+  if ((state->appname = new (std::nothrow) char[len + 1]) == nullptr) {
+    return -1;
+  };
+
+  state->local_info.width = width;
+  state->local_info.height = height;
+  state->local_info.stride = width * sizeof(uint32_t);
+  state->local_info.size = width * height * sizeof(uint32_t);
+  state->resize_type = window_resize_type::win_none;
+  if (type == window_type::win_static)
+    state->readyMask |= FLEXI_WIN_STATIC;
+
+  memcpy(state->appname, appname, len);
+  state->appname[len] = '\0';
+
+  if (create_start_wayland(state) != 0)
+    return -1;
+
+  int tmp_width = type == win_static ? width : state->display_info.width;
+  int tmp_height = type == win_static ? height : state->display_info.height;
+  int tmp_size =
+      type != win_static ? state->display_info.size : state->local_info.size;
+
+  if (allocateShm(state, tmp_width, tmp_height, tmp_size) < 0)
+    return flexiwin_destroy(state, -1);
+
+  state->readyMask |= FLEXI_SHM_OK;
+
+  state->display_shm_pool =
+      wl_shm_create_pool(state->display_shm, state->shmFd, tmp_size);
+  add_xdg_listeners(state, tmp_width, tmp_height);
+
+  if (state->display_shm_pool == NULL)
+    return flexiwin_destroy(state, -1);
+
+  state->readyMask |= FLEXI_SHM_POOL_OK;
+
+  if (type != window_type::win_static) {
+    tmp_width = width;
+    tmp_height = height;
+  }
+  state->display_buffer = wl_shm_pool_create_buffer(
+      state->display_shm_pool, 0, tmp_width, tmp_height,
+      state->local_info.stride, state->buffer_format);
+
+  wl_surface_attach(state->surface, state->display_buffer, 0, 0);
+  wl_surface_commit(state->surface);
+  state->readyMask |= FLEXI_WINDOW_RUNNING;
+  while (state->readyMask & FLEXI_WINDOW_RUNNING) {
+    wl_display_dispatch(state->display);
+    wl_surface_damage(state->surface, 0, 0, tmp_width, tmp_height);
+    memset(state->rawPixels, 0xffffffff, state->local_info.size);
+    wl_surface_commit(state->surface);
+    if (state->readyMask & FLEXI_WINDOW_RESIZED) {
+      std::cout << "resized" << std::endl;
+      state->readyMask &= ~FLEXI_WINDOW_RESIZED;
+    };
+  };
   return 0;
 };
-int windowManager::moveXY(int x, int y) { return 0; };
-int windowManager::resize(int width, int height) { return 0; };
 
-int windowManager::getWinFd() const { return wmState.displayFd; }
-int windowManager::destroy(int retVal) noexcept {
-  size_t mask = wmState.readyMask;
+int flexiwin_moveXY(int x, int y) { return 0; };
+int flexiwin_resize(int width, int height) { return 0; };
 
+int flexiwin_get_win_fd(flexiwinState *state) { return state->displayFd; }
+int flexiwin_destroy(flexiwinState *state, int retVal) {
+  size_t mask = state->readyMask;
+
+  if (mask & FLEXI_SHM_POOL_OK)
+    wl_shm_pool_destroy(state->display_shm_pool);
+
+  if (mask & FLEXI_SHM_OK) {
+    close(state->shmFd);
+    munmap(state->rawPixels, state->rawPixelSize);
+  };
   if (mask & FLEXI_XDG_TOPLEVEL_OK)
-    xdg_toplevel_destroy(wmState.xdg_surface_toplevel);
+    xdg_toplevel_destroy(state->xdg_surface_toplevel);
 
   if (mask & FLEXI_XDG_SURFACE_OK)
-    xdg_surface_destroy(wmState.display_xdg_surface);
+    xdg_surface_destroy(state->display_xdg_surface);
 
   if (mask & FLEXI_XDG_WM_BASE_OK)
-    xdg_wm_base_destroy(wmState.display_xdg_base);
+    xdg_wm_base_destroy(state->display_xdg_base);
   if (mask & FLEXI_SURFACE_OK)
-    wl_surface_destroy(wmState.surface);
+    wl_surface_destroy(state->surface);
 
   if (mask & FLEXI_COMPOSITOR_OK)
-    wl_compositor_destroy(wmState.display_compositor);
+    wl_compositor_destroy(state->display_compositor);
 
   if (mask & FLEXI_REGISTRY_OK)
-    wl_registry_destroy(wmState.registry);
+    wl_registry_destroy(state->registry);
 
   if (mask & FLEXI_DISPLAY_OK)
-    wl_display_disconnect(wmState.display);
+    wl_display_disconnect(state->display);
   return retVal;
 }
-}; // namespace flexi
 /*
 
 
@@ -205,30 +290,7 @@ waylandWM::waylandWM(window &window) {
 
 
 
-  wmconfig.display_xdg_surface =
-      xdg_wm_base_get_xdg_surface(wmconfig.display_xdg_base, wmconfig.surface);
-  wmconfig.xdg_surface_toplevel =
-      xdg_surface_get_toplevel(wmconfig.display_xdg_surface);
 
-  wl_surface_commit(wmconfig.surface);
-  while (wl_display_dispatch(wmconfig.display) != -1 && !wmconfig.configured)
-    ;
-
-  if (allocate_shm(&wmconfig) == -1) {
-    std::cout << "allocation failed" << std::endl;
-  };
-
-  xdg_surface_add_listener(wmconfig.display_xdg_surface,
-                           &xdg_surface_callback_listener, &wmconfig);
-  xdg_toplevel_add_listener(wmconfig.xdg_surface_toplevel,
-                            &xdg_surface_callback_listener_toplevel, &wmconfig);
-
-  xdg_toplevel_set_max_size(wmconfig.xdg_surface_toplevel,
-                            wmconfig.display_width, wmconfig.display_height);
-
-  xdg_toplevel_set_title(wmconfig.xdg_surface_toplevel, window.name);
-  xdg_toplevel_set_app_id(wmconfig.xdg_surface_toplevel, window.name);
-  xdg_toplevel_set_min_size(wmconfig.xdg_surface_toplevel, 200, 200);
 
   wmconfig.display_shm_pool =
       wl_shm_create_pool(wmconfig.display_shm, wmconfig.shm_fd, 10);
@@ -237,7 +299,8 @@ waylandWM::waylandWM(window &window) {
   wl_surface_attach(wmconfig.surface, wmconfig.display_buffer, 0, 0);
   wl_surface_commit(wmconfig.surface);
 
-  while (wl_display_dispatch(wmconfig.display) != -1 && !wmconfig.configuredxdg)
+  while (wl_display_dispatch(wmconfig.display) != -1 &&
+!wmconfig.configuredxdg)
     ;
 
   switch (window.flag) {
@@ -261,9 +324,8 @@ waylandWM::waylandWM(window &window) {
     break;
   };
 
-  while (wl_display_dispatch(wmconfig.display) != -1 && !wmconfig.maxconfig) {
-    if (wmconfig.resized == true) {
-      wmconfig.resize(&wmconfig);
+  while (wl_display_dispatch(wmconfig.display) != -1 && !wmconfig.maxconfig)
+{ if (wmconfig.resized == true) { wmconfig.resize(&wmconfig);
       wmconfig.resized = false;
     };
   }

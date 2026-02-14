@@ -1,5 +1,5 @@
 #include "flexiwin/wayland-callback.hpp"
-#include "flexiwin/flexiwin.hpp"
+#include "flexiwin/common.hpp"
 #include <cassert>
 #include <cstring>
 #include <iostream>
@@ -239,7 +239,7 @@ const struct wl_keyboard_listener keyboard_listener = {
 static void seat_capability_callback(void *data, struct wl_seat *wl_seat,
                                      uint32_t capabilities) {
 
-  flexi::WMState *bypass = (flexi::WMState *)data;
+  flexiwinState *bypass = (flexiwinState *)data;
   bool keyboardPresent = capabilities & WL_SEAT_CAPABILITY_KEYBOARD;
 
   if (keyboardPresent && bypass->display_keyboard == NULL) {
@@ -269,9 +269,8 @@ const struct wl_seat_listener wl_seat_obj = {
 static void surface_pixel_format(void *data, wl_shm *wl_shm, uint32_t format) {
   switch (format) {
   case WL_SHM_FORMAT_ARGB8888:
-
-    break;
-  case WL_SHM_FORMAT_XRGB8888:
+    ((flexiwin_state *)data)->buffer_format = WL_SHM_FORMAT_ARGB8888;
+    ((flexiwin_state *)data)->readyMask |= FLEXI_FROMAT_OK;
     break;
   };
 };
@@ -287,8 +286,9 @@ static void wl_output_mode(void *data, struct wl_output *wl_output,
                            uint32_t flags, int32_t width, int32_t height,
                            int32_t refresh) {};
 static void wl_output_done(void *data, struct wl_output *wl_output) {
-  flexi::WMState *info = (flexi::WMState *)data;
+  flexiwinState *info = (flexiwinState *)data;
   info->configured = true;
+  std::cout << "[output done] " << std::endl;
 };
 static void wl_output_scale(void *data, struct wl_output *wl_output,
                             int32_t factor) {};
