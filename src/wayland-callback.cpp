@@ -14,116 +14,108 @@ static void pointer_button(void *data, struct wl_pointer *pointer,
                            uint32_t serial, uint32_t time, uint32_t button,
                            uint32_t state) {
 
-  /*
-  struct pointer_event *pointer_state = (struct pointer_event *)data;
-  pointer_state->event_type = WL_POINTER_EVENT_BUTTON;
-  pointer_state->serial = serial;
-  pointer_state->button = button, pointer_state->state = state;
-  pointer_state->time = time;
-  */
+  struct flexiwin_pointer_event *_state = (struct flexiwin_pointer_event *)data;
+
+  _state->event_type |= flexiwin_pointer_button;
+  _state->serial = serial;
+  _state->button = button;
+  _state->state = state;
+  _state->time = time;
 }
 
 static void pointer_enter(void *data, struct wl_pointer *wl_pointer,
                           uint32_t serial, struct wl_surface *surface,
                           wl_fixed_t surface_x, wl_fixed_t surface_y) {
-  /*
+  struct flexiwin_pointer_event *state = (struct flexiwin_pointer_event *)data;
 
-  struct pointer_event *pointer_state = (struct pointer_event *)data;
-  pointer_state->event_type = WL_POINTER_EVENT_ENTER;
-  pointer_state->x = wl_fixed_to_double(surface_x);
-  pointer_state->y = wl_fixed_to_double(surface_y);
-  pointer_state->serial = serial;
-  */
+  state->event_type |= flexiwin_pointer_enter;
+  state->x = wl_fixed_to_double(surface_x);
+  state->y = wl_fixed_to_double(surface_y);
+  state->serial = serial;
 };
 
 static void pointer_leave(void *data, struct wl_pointer *wl_pointer,
                           uint32_t serial, struct wl_surface *surface) {
 
-  /*
-  struct pointer_event *pointer_state = (struct pointer_event *)data;
-  pointer_state->event_type = WL_POINTER_EVENT_LEAVE;
-  pointer_state->serial = serial;
-  */
+  struct flexiwin_pointer_event *state = (struct flexiwin_pointer_event *)data;
+
+  state->event_type |= flexiwin_pointer_leave;
+  state->serial = serial;
 };
 
 static void pointer_motion(void *data, struct wl_pointer *wl_pointer,
                            uint32_t time, wl_fixed_t surface_x,
                            wl_fixed_t surface_y) {
-  /*
-    struct pointer_event *pointer_state = (struct pointer_event *)data;
-    pointer_state->event_type = WL_POINTER_EVENT_MOTION;
-    pointer_state->x = wl_fixed_to_double(surface_x);
-    pointer_state->y = wl_fixed_to_double(surface_y);
-    pointer_state->time = time;
-    */
+
+  struct flexiwin_pointer_event *state = (struct flexiwin_pointer_event *)data;
+
+  state->event_type |= flexiwin_pointer_motion;
+  state->x = wl_fixed_to_double(surface_x);
+  state->y = wl_fixed_to_double(surface_y);
+  state->time = time;
 };
 
 static void pointer_axis(void *data, struct wl_pointer *wl_pointer,
                          uint32_t time, uint32_t axis, wl_fixed_t value) {
 
-  /*
-  struct pointer_event *pointer_state = (struct pointer_event *)data;
-  pointer_state->event_type = WL_POINTER_EVENT_AXIS;
-  pointer_state->time = time;
-  pointer_state->axis[axis].valid = 1;
-  pointer_state->axis[axis].value = value;
-  */
+  struct flexiwin_pointer_event *state = (struct flexiwin_pointer_event *)data;
+
+  state->event_type |= flexiwin_pointer_axis;
+  state->time = time;
+  state->axis[axis].valid = 1;
+  state->axis[axis].value = value;
 };
 
 static void pointer_frame(void *data, struct wl_pointer *wl_pointer) {
 
   /*
-  // TODO: propagate the event data to the state manager pointer event queue
+    // TODO: propagate the event data to the state manager pointer event queue
 
-  //  xdg_toplevel_move(xdg_toplevel, wl_seat, serial);
-  // struct window_state* info = (window_state*)data;
-  //  xdg_toplevel_move(info->xdg_surface_toplevel,info->display_seat,serial);
-  //
-  xdg_toplevel_show_window_menu(info->xdg_surface_toplevel, info->display_seat,
-                                serial, 0, 0);
-  //
-  xdg_toplevel_resize(info->xdg_surface_toplevel, info->display_seat,
-                      info->serial, 2);
-  //
-  xdg_toplevel_resize(info->xdg_surface_toplevel, info->display_seat,
-                      pointer_state.serial, 3);
-  // flexon::memset64(&pointer_state,0,loop);
+    //  xdg_toplevel_move(xdg_toplevel, wl_seat, serial);
+    // struct window_state* info = (window_state*)data;
+    //  xdg_toplevel_move(info->xdg_surface_toplevel,info->display_seat,serial);
+    //
+    xdg_toplevel_show_window_menu(info->xdg_surface_toplevel,
+    info->display_seat, serial, 0, 0);
+    //
+    xdg_toplevel_resize(info->xdg_surface_toplevel, info->display_seat,
+                        info->serial, 2);
+    //
+    xdg_toplevel_resize(info->xdg_surface_toplevel, info->display_seat,
+                        pointer_state.serial, 3);
+    // flexon::memset64(&pointer_state,0,loop);
 
-  //   pointer_state = statemanager::getNextPointerQueue();
-  // utility::strings::memset64(pointer_state,0,7);
-  */
+    //   pointer_state = statemanager::getNextPointerQueue();
+    // utility::strings::memset64(pointer_state,0,7);
+    */
+
 };
 
 static void pointer_axis_source(void *data, struct wl_pointer *wl_pointer,
                                 uint32_t axis_source) {
 
-  /*
-  struct pointer_event *pointer_state = (struct pointer_event *)data;
-  pointer_state->event_type = WL_POINTER_EVENT_AXIS_SOURCE;
-  pointer_state->axis_source = axis_source;
-  */
+  struct flexiwin_pointer_event *state = (struct flexiwin_pointer_event *)data;
+  state->event_type |= flexiwin_pointer_axis_source;
+  state->axis_source = axis_source;
 };
 
 static void pointer_axis_stop(void *data, struct wl_pointer *wl_pointer,
                               uint32_t time, uint32_t axis) {
-  /*
 
-  struct pointer_event *pointer_state = (struct pointer_event *)data;
-  pointer_state->event_type = WL_POINTER_EVENT_AXIS_STOP;
-  pointer_state->time = time;
-  pointer_state->axis[axis].valid = 1;
-  */
+  struct flexiwin_pointer_event *state = (struct flexiwin_pointer_event *)data;
+  state->event_type |= flexiwin_pointer_axis_stop;
+  state->time = time;
+  state->axis[axis].valid = 1;
 };
 
 static void pointer_axis_discrete(void *data, struct wl_pointer *wl_pointer,
                                   uint32_t axis, int32_t discrete) {
 
-  /*
-  struct pointer_event *pointer_state = (struct pointer_event *)data;
-  pointer_state->event_type = WL_POINTER_EVENT_AXIS_DISCRETE;
-  pointer_state->axis[axis].valid = 1;
-  pointer_state->axis[axis].discrete = discrete;
-  */
+  struct flexiwin_pointer_event *state = (struct flexiwin_pointer_event *)data;
+
+  state->event_type |= flexiwin_pointer_axis_discrete;
+  state->axis[axis].valid = 1;
+  state->axis[axis].discrete = discrete;
 };
 
 const struct wl_pointer_listener pointer_listener = {
@@ -243,18 +235,15 @@ static void seat_capability_callback(void *data, struct wl_seat *wl_seat,
   bool keyboardPresent = capabilities & WL_SEAT_CAPABILITY_KEYBOARD;
 
   if (keyboardPresent && bypass->display_keyboard == NULL) {
-    // TODO: pass valid struct instead of nullptr
-
     bypass->display_keyboard = wl_seat_get_keyboard(wl_seat);
     wl_keyboard_add_listener(bypass->display_keyboard, &keyboard_listener,
-                             nullptr);
+                             &bypass->keyEvent);
   }
 
   if (capabilities & WL_SEAT_CAPABILITY_POINTER) {
-    // TODO: pass valid struct instead of nullptr
     bypass->display_pointer = wl_seat_get_pointer(wl_seat);
     wl_pointer_add_listener(bypass->display_pointer, &pointer_listener,
-                            nullptr);
+                            &bypass->pointerEvent);
   }
 };
 

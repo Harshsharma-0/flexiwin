@@ -1,5 +1,8 @@
 #include "flexiwin/flexiwin.hpp"
+#include "flexiwin/common.hpp"
 
+#include <EGL/egl.h>
+#include <EGL/eglplatform.h>
 #include <cstring>
 #include <fcntl.h>
 #include <iostream>
@@ -9,6 +12,7 @@
 #include <wayland-client-core.h>
 #include <wayland-client-protocol.h>
 #include <wayland-client.h>
+#include <wayland-egl-core.h>
 
 static void randname(char *buf) {
   struct timespec ts;
@@ -167,8 +171,7 @@ static int create_start_wayland(flexiwin_state *state) {
 
   wl_surface_commit(state->surface);
 
-  // TODO: rountrip
-  while (wl_display_dispatch(state->display) != -1 && !state->configured) {
+  while (wl_display_roundtrip(state->display) != -1 && !state->configured) {
   }
   if (!(state->readyMask & FLEXI_XDG_WM_BASE_OK) ||
       !(state->readyMask & FLEXI_FROMAT_OK))
@@ -176,32 +179,8 @@ static int create_start_wayland(flexiwin_state *state) {
 
   return 0;
 }
-int flexiwin_init(flexiwin_state *state, char *appname, int width, int height,
-                  window_mode mode, window_type type) {
-
-  if (width < flexiwin_min_width || height < flexiwin_min_height)
-    return -1;
-
-  size_t len = strlen(appname);
-  state->appname = nullptr;
-  if ((state->appname = new (std::nothrow) char[len + 1]) == nullptr) {
-    return -1;
-  };
-
-  state->local_info.width = width;
-  state->local_info.height = height;
-  state->local_info.stride = width * sizeof(uint32_t);
-  state->local_info.size = width * height * sizeof(uint32_t);
-  state->resize_type = window_resize_type::win_none;
-  if (type == window_type::win_static)
-    state->readyMask |= FLEXI_WIN_STATIC;
-
-  memcpy(state->appname, appname, len);
-  state->appname[len] = '\0';
-
-  if (create_start_wayland(state) != 0)
-    return -1;
-
+static int create_buffered_win(flexiwin_state *state, int width, int height,
+                               window_type type) {
   int tmp_width = type == win_static ? width : state->display_info.width;
   int tmp_height = type == win_static ? height : state->display_info.height;
   int tmp_size =
@@ -231,20 +210,134 @@ int flexiwin_init(flexiwin_state *state, char *appname, int width, int height,
 
   wl_surface_attach(state->surface, state->display_buffer, 0, 0);
   wl_surface_commit(state->surface);
-  state->readyMask |= FLEXI_WINDOW_RUNNING;
-  while (state->readyMask & FLEXI_WINDOW_RUNNING) {
-    wl_display_dispatch(state->display);
-    wl_surface_damage(state->surface, 0, 0, tmp_width, tmp_height);
-    memset(state->rawPixels, 0xffffffff, state->local_info.size);
-    wl_surface_commit(state->surface);
-    if (state->readyMask & FLEXI_WINDOW_RESIZED) {
-      std::cout << "resized" << std::endl;
-      state->readyMask &= ~FLEXI_WINDOW_RESIZED;
-    };
-  };
   return 0;
 };
 
+static int create_egl_window(flexiwin_state *state, int width, int height) {
+  wl_egl_window *egl_window =
+      wl_egl_window_create(state->surface, width, height);
+  if (egl_window == NULL)
+    return -1;
+
+  add_xdg_listeners(state, width, height);
+
+  state->egl_info->window = egl_window;
+  return 0;
+};
+
+int flexiwin_init(flexiwin_state *state, char *appname, int width, int height,
+                  window_type type) {
+
+  if (width < flexiwin_min_width || height < flexiwin_min_height)
+    return -1;
+
+  size_t len = strlen(appname);
+  state->appname = nullptr;
+  if ((state->appname = new (std::nothrow) char[len + 1]) == nullptr) {
+    return -1;
+  };
+
+  state->local_info.width = width;
+  state->local_info.height = height;
+  state->local_info.stride = width * sizeof(uint32_t);
+  state->local_info.size = width * height * sizeof(uint32_t);
+  state->resize_type = window_resize_type::win_none;
+  if (type == window_type::win_static)
+    state->readyMask |= FLEXI_WIN_STATIC;
+
+  memcpy(state->appname, appname, len);
+  state->appname[len] = '\0';
+
+  if (create_start_wayland(state) != 0)
+    return -1;
+  return 0;
+};
+
+int flexiwin_create(flexiwin_state *state, window_mode mode) {
+
+  int32_t width = state->local_info.width;
+  int32_t height = state->local_info.height;
+  window_type type = (state->readyMask & FLEXI_WIN_STATIC)
+                         ? window_type::win_static
+                         : window_type::win_dynamic;
+
+  if (state->readyMask & FLEXI_WIN_EGL_ENABLE) {
+    if (create_egl_window(state, width, height) != 0)
+      return -1;
+  } else {
+    if (create_buffered_win(state, width, height, type) != 0)
+      return -1;
+  };
+  while (wl_display_roundtrip(state->display) != -1 &&
+         (state->readyMask & FLEXI_XDG_CONFIGURED)) {
+  }
+  state->readyMask |= FLEXI_WINDOW_RUNNING;
+  return 0;
+};
+int flexiwin_create_gl_ctx(flexiwin_state *state) {
+  if (!(state->readyMask & FLEXI_WIN_EGL_ENABLE) ||
+      !(state->readyMask & FLEXI_DISPLAY_OK)) {
+    std::cout << "[egl ctx error] gl not enabled or display not ok"
+              << std::endl;
+
+    return -1;
+  }
+
+  flexiwin_egl_info *egl_info = state->egl_info;
+  EGLDisplay display = eglGetDisplay((EGLNativeDisplayType)state->display);
+
+  if (display == EGL_NO_DISPLAY) {
+    std::cout << "[egl ctx error] failed to get display" << std::endl;
+
+    return -1;
+  }
+
+  if (!eglInitialize(display, &egl_info->major_ver, &egl_info->major_ver)) {
+    std::cout << "[egl ctx error] failed to get version" << std::endl;
+    return -1;
+  }
+
+  EGLint num_cfg = 0;
+  if ((eglGetConfigs(display, NULL, 0, &num_cfg) != EGL_TRUE) ||
+      (num_cfg == 0)) {
+    std::cout << "[egl ctx error] failed to get cfg" << std::endl;
+
+    return -1;
+  }
+
+  if (num_cfg < egl_info->num_cfg) {
+    std::cout << "ga" << std::endl;
+    return -1;
+  }
+
+  if ((eglChooseConfig(display, egl_info->config_attribs, &egl_info->config,
+                       egl_info->num_cfg, &num_cfg) != EGL_TRUE) ||
+      (num_cfg != egl_info->num_cfg)) {
+    std::cout << "[egl] config choose error " << num_cfg << std::endl;
+    return -1;
+  }
+
+  state->surface = (wl_surface *)eglCreateWindowSurface(
+      display, egl_info->config, (EGLNativeWindowType)egl_info->window, NULL);
+
+  if (state->surface == EGL_NO_SURFACE)
+    return -1;
+
+  egl_info->context = eglCreateContext(display, egl_info->config,
+                                       EGL_NO_CONTEXT, egl_info->ctx_attribs);
+  if (egl_info->context == EGL_NO_CONTEXT) {
+    std::cout << "[egl ctx error] failed to create ctx" << std::endl;
+    return -1;
+  };
+  if (!eglMakeCurrent(display, state->surface, state->surface,
+                      egl_info->context))
+    return -1;
+
+  egl_info->display = display;
+  state->readyMask |= FLEXI_WIN_EGL_OK;
+
+  return 0;
+};
 int flexiwin_moveXY(int x, int y) { return 0; };
 int flexiwin_resize(int width, int height) { return 0; };
 
@@ -267,8 +360,23 @@ int flexiwin_destroy(flexiwinState *state, int retVal) {
 
   if (mask & FLEXI_XDG_WM_BASE_OK)
     xdg_wm_base_destroy(state->display_xdg_base);
-  if (mask & FLEXI_SURFACE_OK)
-    wl_surface_destroy(state->surface);
+
+  if (mask & FLEXI_WIN_EGL_ENABLE) {
+    if (mask & FLEXI_WIN_EGL_ENABLE) {
+      eglDestroySurface(state->egl_info->display, state->surface);
+      wl_egl_window_destroy(state->egl_info->window);
+    };
+  } else {
+    if (mask & FLEXI_SURFACE_OK) {
+      wl_surface_destroy(state->surface);
+    }
+  };
+
+  if (mask & FLEXI_WIN_EGL_ENABLE) {
+    if (mask & FLEXI_WIN_EGL_ENABLE) {
+      eglDestroyContext(state->egl_info->display, state->egl_info->context);
+    };
+  };
 
   if (mask & FLEXI_COMPOSITOR_OK)
     wl_compositor_destroy(state->display_compositor);
@@ -278,65 +386,6 @@ int flexiwin_destroy(flexiwinState *state, int retVal) {
 
   if (mask & FLEXI_DISPLAY_OK)
     wl_display_disconnect(state->display);
+
   return retVal;
 }
-/*
-
-
-
-
-/*
-waylandWM::waylandWM(window &window) {
-
-
-
-
-
-  wmconfig.display_shm_pool =
-      wl_shm_create_pool(wmconfig.display_shm, wmconfig.shm_fd, 10);
-  wmconfig.display_buffer = wl_shm_pool_create_buffer(
-      wmconfig.display_shm_pool, 0, 1, 1, 1, WL_SHM_FORMAT_ABGR8888);
-  wl_surface_attach(wmconfig.surface, wmconfig.display_buffer, 0, 0);
-  wl_surface_commit(wmconfig.surface);
-
-  while (wl_display_dispatch(wmconfig.display) != -1 &&
-!wmconfig.configuredxdg)
-    ;
-
-  switch (window.flag) {
-  case WINDOW_FULL_SCREEN:
-    xdg_toplevel_set_fullscreen(wmconfig.xdg_surface_toplevel,
-                                wmconfig.display_output);
-    wmconfig.windowstate = WINDOW_STATE_MAXIMIZED_FULL;
-    break;
-  case WINDOW_CUSTOM_SIZE:
-    if (bound(window)) {
-      wmconfig.dwidth = window.width;
-      wmconfig.dheight = window.height;
-      wmconfig.fresize = WINDOW_RESIZE_GROW;
-      wmconfig.resize(&wmconfig);
-      break;
-    }
-
-  case WINDOW_FULL_TOPBAR_SHOWN:
-    xdg_toplevel_set_maximized(wmconfig.xdg_surface_toplevel);
-    wmconfig.windowstate = WINDOW_STATE_MAXIMIZED_BOUNDED;
-    break;
-  };
-
-  while (wl_display_dispatch(wmconfig.display) != -1 && !wmconfig.maxconfig)
-{ if (wmconfig.resized == true) { wmconfig.resize(&wmconfig);
-      wmconfig.resized = false;
-    };
-  }
-
-  return;
-}
-
-void waylandWM::destroy() {
-  close(wmconfig.shm_fd);
-  munmap(wmconfig.pixels, wmconfig.size);
-  wl_shm_pool_destroy(wmconfig.display_shm_pool);
-  return;
-}
-*/

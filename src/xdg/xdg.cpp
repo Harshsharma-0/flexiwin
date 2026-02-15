@@ -1,15 +1,16 @@
 #include "flexiwin/xdg/xdg.hpp"
+#include "flexiwin/common.hpp"
 #include "flexiwin/flexiwin.hpp"
 #include "flexiwin/xdg-shell-client-protocol.h"
-
 #include <iostream>
+#include <wayland-egl-core.h>
+#include <wayland-egl.h>
 
 static void xdg_wm_base_ping_callback(void *data,
                                       struct xdg_wm_base *xdg_wm_base,
                                       uint32_t serial) {
 
   ((flexiwinState *)data)->evSerial = serial;
-
   xdg_wm_base_pong(xdg_wm_base, serial);
 }
 
@@ -20,7 +21,7 @@ static void xdg_surface_callback_configure(void *data,
                                            struct xdg_surface *xdg_surface,
                                            uint32_t serial) {
   xdg_surface_ack_configure(xdg_surface, serial);
-  ((flexiwinState *)data)->configured = true;
+  ((flexiwinState *)data)->readyMask |= FLEXI_XDG_CONFIGURED;
 }
 
 const struct xdg_surface_listener xdg_surface_callback_listener = {
@@ -35,31 +36,24 @@ static void xdg_surface_callback_toplevel_configure(
   if (info->readyMask & FLEXI_WIN_STATIC)
     return;
 
-  int mask = 0;
-  uint32_t size = width * height * sizeof(uint32_t);
   if (width > 0 && height > 0) {
-    if (info->local_info.width != width) {
-      info->local_info.width = width;
-      info->local_info.stride = width * sizeof(uint32_t);
-      mask = FLEXI_WINDOW_RESIZED;
+
+    if (info->readyMask & FLEXI_WIN_EGL_OK) {
+      wl_egl_window_resize(info->egl_info->window, width, height, 0, 0);
+      return;
     };
+    uint32_t size = width * height * sizeof(uint32_t);
+    info->local_info.stride = width * sizeof(uint32_t);
 
-    if (info->local_info.height != height) {
-      mask = FLEXI_WINDOW_RESIZED;
-      info->local_info.height = height;
-    }
+    wl_buffer_destroy(info->display_buffer);
+    info->display_buffer = info->display_buffer =
+        wl_shm_pool_create_buffer(info->display_shm_pool, 0, width, height,
+                                  info->local_info.stride, info->buffer_format);
+    wl_surface_attach(info->surface, info->display_buffer, 0, 0);
+    wl_surface_commit(info->surface);
 
-    if (mask == FLEXI_WINDOW_RESIZED) {
-      wl_buffer_destroy(info->display_buffer);
-      info->display_buffer = info->display_buffer = wl_shm_pool_create_buffer(
-          info->display_shm_pool, 0, width, height, info->local_info.stride,
-          info->buffer_format);
-      wl_surface_attach(info->surface, info->display_buffer, 0, 0);
-      wl_surface_commit(info->surface);
-
-      info->local_info.size = size;
-      info->readyMask |= mask;
-    }
+    info->local_info.size = size;
+    info->readyMask |= FLEXI_WINDOW_RESIZED;
   }
   // TODO: handle Resize Event
 }
