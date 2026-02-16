@@ -17,13 +17,13 @@ int main() {
                     wmstate.local_info.height);
   wl_surface_commit(wmstate.surface);
 
-  while (wmstate.readyMask & FLEXI_WINDOW_RUNNING) {
+  while (wmstate.mask & FLEXI_WINDOW_RUNNING) {
     wl_display_dispatch(wmstate.display);
     memset(wmstate.rawPixels, 0xffffffff, wmstate.local_info.size);
     wl_surface_damage(wmstate.surface, 0, 0, wmstate.local_info.width,
                       wmstate.local_info.height);
     wl_surface_commit(wmstate.surface);
   };
-  flexiwin_destroy(&wmstate, 0);
+  flexiwin_destroy(&wmstate);
   return 0;
 }

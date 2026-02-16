@@ -1,5 +1,6 @@
 #include "flexiwin/flexiwin.hpp"
 #include "flexiwin/common.hpp"
+#include "flexiwin/events/common.hpp"
 
 #include <EGL/egl.h>
 #include <EGL/eglplatform.h>
@@ -51,7 +52,6 @@ static void register_global(void *data, wl_registry *registry, uint32_t name,
     if (bypass->display_xdg_base == NULL)
       return;
 
-    bypass->readyMask |= FLEXI_XDG_WM_BASE_OK;
     xdg_wm_base_add_listener(bypass->display_xdg_base,
                              &xdg_wm_base_callback_listener, data);
   };
@@ -111,16 +111,19 @@ static int allocateShm(flexiwin_state *state, int width, int height,
   };
   return 0;
 };
-
-static void add_xdg_listeners(flexiwin_state *state, int32_t tmp_width,
-                              int32_t tmp_height) {
+static void destroy_shm(flexiwin_state *state) {
+  close(state->shmFd);
+  munmap(state->rawPixels, state->rawPixelSize);
+}
+static void add_xdg_listeners(flexiwin_state *state, int32_t max_width,
+                              int32_t max_height) {
 
   xdg_surface_add_listener(state->display_xdg_surface,
                            &xdg_surface_callback_listener, state);
   xdg_toplevel_add_listener(state->xdg_surface_toplevel,
                             &xdg_surface_callback_listener_toplevel, state);
 
-  xdg_toplevel_set_max_size(state->xdg_surface_toplevel, tmp_height, tmp_width);
+  xdg_toplevel_set_max_size(state->xdg_surface_toplevel, max_width, max_height);
 
   xdg_toplevel_set_min_size(state->xdg_surface_toplevel, flexiwin_min_width,
                             flexiwin_min_height);
@@ -134,48 +137,41 @@ static int create_start_wayland(flexiwin_state *state) {
     return -1;
 
   state->displayFd = wl_display_get_fd(state->display);
-  state->readyMask |= FLEXI_DISPLAY_OK;
 
   if ((state->registry = wl_display_get_registry(state->display)) == NULL)
-    return flexiwin_destroy(state, -1);
-
-  state->readyMask |= FLEXI_REGISTRY_OK;
+    return -1;
 
   wl_registry_add_listener(state->registry, &display_registry_listener, state);
   wl_display_roundtrip(state->display);
 
   if (state->display_compositor == NULL)
-    return flexiwin_destroy(state, -1);
-
-  state->readyMask |= FLEXI_COMPOSITOR_OK;
+    return -1;
 
   state->surface = wl_compositor_create_surface(state->display_compositor);
 
   if (state->surface == NULL)
-    return flexiwin_destroy(state, -1);
+    return -1;
 
-  state->readyMask |= FLEXI_SURFACE_OK;
   state->display_xdg_surface =
       xdg_wm_base_get_xdg_surface(state->display_xdg_base, state->surface);
 
   if (state->display_xdg_surface == NULL)
-    return flexiwin_destroy(state, -1);
+    return -1;
 
-  state->readyMask |= FLEXI_XDG_SURFACE_OK;
   state->xdg_surface_toplevel =
       xdg_surface_get_toplevel(state->display_xdg_surface);
 
   if (state->xdg_surface_toplevel == NULL)
-    return flexiwin_destroy(state, -1);
-  state->readyMask |= FLEXI_XDG_TOPLEVEL_OK;
+    return -1;
 
   wl_surface_commit(state->surface);
 
   while (wl_display_roundtrip(state->display) != -1 && !state->configured) {
   }
-  if (!(state->readyMask & FLEXI_XDG_WM_BASE_OK) ||
-      !(state->readyMask & FLEXI_FROMAT_OK))
-    return flexiwin_destroy(state, -1);
+  if (state->display_xdg_base == NULL || !(state->mask & FLEXI_FORMAT_OK))
+    return -1;
+
+  state->mask &= ~(FLEXI_FORMAT_OK);
 
   return 0;
 }
@@ -187,18 +183,16 @@ static int create_buffered_win(flexiwin_state *state, int width, int height,
       type != win_static ? state->display_info.size : state->local_info.size;
 
   if (allocateShm(state, tmp_width, tmp_height, tmp_size) < 0)
-    return flexiwin_destroy(state, -1);
-
-  state->readyMask |= FLEXI_SHM_OK;
+    return -1;
 
   state->display_shm_pool =
       wl_shm_create_pool(state->display_shm, state->shmFd, tmp_size);
   add_xdg_listeners(state, tmp_width, tmp_height);
 
-  if (state->display_shm_pool == NULL)
-    return flexiwin_destroy(state, -1);
-
-  state->readyMask |= FLEXI_SHM_POOL_OK;
+  if (state->display_shm_pool == NULL) {
+    destroy_shm(state);
+    return -1;
+  }
 
   if (type != window_type::win_static) {
     tmp_width = width;
@@ -219,7 +213,10 @@ static int create_egl_window(flexiwin_state *state, int width, int height) {
   if (egl_window == NULL)
     return -1;
 
-  add_xdg_listeners(state, width, height);
+  int max_width = state->display_info.width;
+  int max_height = state->display_info.height;
+
+  add_xdg_listeners(state, max_width, max_height);
 
   state->egl_info->window = egl_window;
   return 0;
@@ -230,6 +227,8 @@ int flexiwin_init(flexiwin_state *state, char *appname, int width, int height,
 
   if (width < flexiwin_min_width || height < flexiwin_min_height)
     return -1;
+
+  memset(state, 0, sizeof(flexiwin_state));
 
   size_t len = strlen(appname);
   state->appname = nullptr;
@@ -242,8 +241,7 @@ int flexiwin_init(flexiwin_state *state, char *appname, int width, int height,
   state->local_info.stride = width * sizeof(uint32_t);
   state->local_info.size = width * height * sizeof(uint32_t);
   state->resize_type = window_resize_type::win_none;
-  if (type == window_type::win_static)
-    state->readyMask |= FLEXI_WIN_STATIC;
+  state->win_type = type;
 
   memcpy(state->appname, appname, len);
   state->appname[len] = '\0';
@@ -257,11 +255,9 @@ int flexiwin_create(flexiwin_state *state, window_mode mode) {
 
   int32_t width = state->local_info.width;
   int32_t height = state->local_info.height;
-  window_type type = (state->readyMask & FLEXI_WIN_STATIC)
-                         ? window_type::win_static
-                         : window_type::win_dynamic;
-
-  if (state->readyMask & FLEXI_WIN_EGL_ENABLE) {
+  window_type type = state->win_type;
+  if (state->egl_info != NULL) {
+    std::cout << "[flexiwin ] Opengl Enabled" << std::endl;
     if (create_egl_window(state, width, height) != 0)
       return -1;
   } else {
@@ -269,14 +265,13 @@ int flexiwin_create(flexiwin_state *state, window_mode mode) {
       return -1;
   };
   while (wl_display_roundtrip(state->display) != -1 &&
-         (state->readyMask & FLEXI_XDG_CONFIGURED)) {
+         (state->mask & FLEXI_XDG_CONFIGURED)) {
   }
-  state->readyMask |= FLEXI_WINDOW_RUNNING;
+  state->mask |= FLEXI_WINDOW_RUNNING;
   return 0;
 };
 int flexiwin_create_gl_ctx(flexiwin_state *state) {
-  if (!(state->readyMask & FLEXI_WIN_EGL_ENABLE) ||
-      !(state->readyMask & FLEXI_DISPLAY_OK)) {
+  if (state->egl_info == NULL || state->display == NULL) {
     std::cout << "[egl ctx error] gl not enabled or display not ok"
               << std::endl;
 
@@ -306,7 +301,6 @@ int flexiwin_create_gl_ctx(flexiwin_state *state) {
   }
 
   if (num_cfg < egl_info->num_cfg) {
-    std::cout << "ga" << std::endl;
     return -1;
   }
 
@@ -323,6 +317,7 @@ int flexiwin_create_gl_ctx(flexiwin_state *state) {
   if (state->surface == EGL_NO_SURFACE)
     return -1;
 
+  egl_info->surface = state->surface;
   egl_info->context = eglCreateContext(display, egl_info->config,
                                        EGL_NO_CONTEXT, egl_info->ctx_attribs);
   if (egl_info->context == EGL_NO_CONTEXT) {
@@ -334,7 +329,6 @@ int flexiwin_create_gl_ctx(flexiwin_state *state) {
     return -1;
 
   egl_info->display = display;
-  state->readyMask |= FLEXI_WIN_EGL_OK;
 
   return 0;
 };
@@ -342,50 +336,44 @@ int flexiwin_moveXY(int x, int y) { return 0; };
 int flexiwin_resize(int width, int height) { return 0; };
 
 int flexiwin_get_win_fd(flexiwinState *state) { return state->displayFd; }
-int flexiwin_destroy(flexiwinState *state, int retVal) {
-  size_t mask = state->readyMask;
 
-  if (mask & FLEXI_SHM_POOL_OK)
-    wl_shm_pool_destroy(state->display_shm_pool);
+void flexiwin_destroy_egl(flexiwin_egl_info *egl_info) {
+  if (egl_info->window != NULL)
+    eglDestroySurface(egl_info->display, egl_info->surface);
 
-  if (mask & FLEXI_SHM_OK) {
-    close(state->shmFd);
-    munmap(state->rawPixels, state->rawPixelSize);
-  };
-  if (mask & FLEXI_XDG_TOPLEVEL_OK)
+  if (egl_info->display != EGL_NO_DISPLAY)
+    wl_egl_window_destroy(egl_info->window);
+
+  if (egl_info->context != EGL_NO_CONTEXT)
+    eglDestroyContext(egl_info->display, egl_info->context);
+}
+static void flexiwin_destroy_xdg(flexiwin_state *state) {
+  if (state->xdg_surface_toplevel)
     xdg_toplevel_destroy(state->xdg_surface_toplevel);
 
-  if (mask & FLEXI_XDG_SURFACE_OK)
+  if (state->display_xdg_surface)
     xdg_surface_destroy(state->display_xdg_surface);
 
-  if (mask & FLEXI_XDG_WM_BASE_OK)
+  if (state->display_xdg_base)
     xdg_wm_base_destroy(state->display_xdg_base);
+};
 
-  if (mask & FLEXI_WIN_EGL_ENABLE) {
-    if (mask & FLEXI_WIN_EGL_ENABLE) {
-      eglDestroySurface(state->egl_info->display, state->surface);
-      wl_egl_window_destroy(state->egl_info->window);
-    };
-  } else {
-    if (mask & FLEXI_SURFACE_OK) {
-      wl_surface_destroy(state->surface);
-    }
+void flexiwin_destroy(flexiwinState *state) {
+
+  if (state->display_shm_pool) {
+    wl_shm_pool_destroy(state->display_shm_pool);
+    destroy_shm(state);
   };
+  flexiwin_destroy_xdg(state);
+  if (state->surface && state->egl_info == NULL)
+    wl_surface_destroy(state->surface);
 
-  if (mask & FLEXI_WIN_EGL_ENABLE) {
-    if (mask & FLEXI_WIN_EGL_ENABLE) {
-      eglDestroyContext(state->egl_info->display, state->egl_info->context);
-    };
-  };
-
-  if (mask & FLEXI_COMPOSITOR_OK)
+  if (state->display_compositor)
     wl_compositor_destroy(state->display_compositor);
 
-  if (mask & FLEXI_REGISTRY_OK)
+  if (state->registry)
     wl_registry_destroy(state->registry);
 
-  if (mask & FLEXI_DISPLAY_OK)
+  if (state->display)
     wl_display_disconnect(state->display);
-
-  return retVal;
-}
+};

@@ -7,9 +7,6 @@
 #include <unistd.h>
 #include <xkbcommon/xkbcommon.h>
 
-struct pointer_event *pointer_state;
-struct key_event *key_state;
-
 static void pointer_button(void *data, struct wl_pointer *pointer,
                            uint32_t serial, uint32_t time, uint32_t button,
                            uint32_t state) {
@@ -149,7 +146,6 @@ void keyboard_destroy() {
 void keyboard_keymap(void *data, struct wl_keyboard *wl_keyboard,
                      uint32_t format, int32_t fd, uint32_t size) {
 
-  /*
   // TODO: propagate error to thread manager to terminate all operations
   assert(format == WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1);
 
@@ -170,51 +166,47 @@ void keyboard_keymap(void *data, struct wl_keyboard *wl_keyboard,
 
   key_xkb_keymap = xkb_keymap;
   key_xkb_state = xkb_state;
-  */
 };
 
 void keyboard_enter(void *data, struct wl_keyboard *wl_keyboard,
                     uint32_t serial, struct wl_surface *surface,
                     struct wl_array *keys) {
 
-  //  struct key_event *key_state = (struct key_event *)data;
-  // do some stuff;
+  flexiwin_key_event *key_state = (flexiwin_key_event *)data;
+  // key_state->event_type = flexiwin_key_enter;
 };
 
 void keyboard_leave(void *data, struct wl_keyboard *wl_keyboard,
                     uint32_t serial, struct wl_surface *surface) {
-  // struct key_event *key_state = (struct key_event *)data;
-  // do some stuff;
+  flexiwin_key_event *key_state = (flexiwin_key_event *)data;
+  key_state->event_type = flexiwin_key_leave;
 };
 
 void keyboard_key(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial,
                   uint32_t time, uint32_t key, uint32_t state) {
 
-  /*
-  struct key_event *key_state = (struct key_event *)data;
+  flexiwin_key_event *key_state = (flexiwin_key_event *)data;
   xkb_keysym_t sym = xkb_state_key_get_one_sym(key_xkb_state, key + 8);
   key_state->serial = serial;
   key_state->key = sym;
 
   switch (state) {
   case WL_KEYBOARD_KEY_STATE_PRESSED:
-    key_state->event_type = WL_KEYBOARD_KEY_ON_PRESS;
+    key_state->event_type = flexiwin_key_on_press;
     break;
   case WL_KEYBOARD_KEY_STATE_RELEASED:
-    key_state->event_type = WL_KEYBOARD_KEY_ON_RELEASE;
+    key_state->event_type = flexiwin_key_on_release;
     break;
   };
-  */
 };
 
 void keyboard_modifiers(void *data, struct wl_keyboard *wl_keyboard,
                         uint32_t serial, uint32_t mods_depressed,
                         uint32_t mods_latched, uint32_t mods_locked,
                         uint32_t group) {
-  /*
+
   xkb_state_update_mask(key_xkb_state, mods_depressed, mods_latched,
                         mods_locked, 0, 0, group);
-                        */
 };
 
 void keyboard_repeat_info(void *data, struct wl_keyboard *wl_keyboard,
@@ -259,7 +251,7 @@ static void surface_pixel_format(void *data, wl_shm *wl_shm, uint32_t format) {
   switch (format) {
   case WL_SHM_FORMAT_ARGB8888:
     ((flexiwin_state *)data)->buffer_format = WL_SHM_FORMAT_ARGB8888;
-    ((flexiwin_state *)data)->readyMask |= FLEXI_FROMAT_OK;
+    ((flexiwin_state *)data)->mask |= FLEXI_FORMAT_OK;
     break;
   };
 };

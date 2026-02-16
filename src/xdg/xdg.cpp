@@ -1,5 +1,6 @@
 #include "flexiwin/xdg/xdg.hpp"
 #include "flexiwin/common.hpp"
+#include "flexiwin/events/common.hpp"
 #include "flexiwin/flexiwin.hpp"
 #include "flexiwin/xdg-shell-client-protocol.h"
 #include <iostream>
@@ -21,7 +22,7 @@ static void xdg_surface_callback_configure(void *data,
                                            struct xdg_surface *xdg_surface,
                                            uint32_t serial) {
   xdg_surface_ack_configure(xdg_surface, serial);
-  ((flexiwinState *)data)->readyMask |= FLEXI_XDG_CONFIGURED;
+  ((flexiwinState *)data)->mask |= FLEXI_XDG_CONFIGURED;
 }
 
 const struct xdg_surface_listener xdg_surface_callback_listener = {
@@ -33,12 +34,11 @@ static void xdg_surface_callback_toplevel_configure(
 
   flexiwinState *info = (flexiwinState *)data;
 
-  if (info->readyMask & FLEXI_WIN_STATIC)
+  if (info->win_type == window_type::win_static)
     return;
 
   if (width > 0 && height > 0) {
-
-    if (info->readyMask & FLEXI_WIN_EGL_OK) {
+    if (info->egl_info != NULL) {
       wl_egl_window_resize(info->egl_info->window, width, height, 0, 0);
       return;
     };
@@ -53,15 +53,14 @@ static void xdg_surface_callback_toplevel_configure(
     wl_surface_commit(info->surface);
 
     info->local_info.size = size;
-    info->readyMask |= FLEXI_WINDOW_RESIZED;
+    info->ev_mask |= FLEXI_WINDOW_RESIZED;
   }
-  // TODO: handle Resize Event
 }
 
 static void
 xdg_surface_callback_toplevel_close(void *data,
                                     struct xdg_toplevel *xdg_toplevel) {
-  ((flexiwinState *)data)->readyMask &= ~(FLEXI_WINDOW_RUNNING);
+  ((flexiwinState *)data)->mask &= ~(FLEXI_WINDOW_RUNNING);
 };
 
 static void xdg_configure_bounds(void *data, struct xdg_toplevel *xdg_toplevel,

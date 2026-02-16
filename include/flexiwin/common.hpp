@@ -53,7 +53,7 @@ typedef struct flexiwin_state {
 
   flexiwin_egl_info *egl_info;
   window_resize_type resize_type;
-
+  window_type win_type;
   int shmFd;
   int displayFd;
   uint32_t evSerial;
@@ -63,8 +63,8 @@ typedef struct flexiwin_state {
   uint32_t *rawPixels;
   int winX, winY;
 
-  size_t readyMask;
-
+  size_t mask;
+  size_t ev_mask;
   flexiwin_key_event keyEvent;
   flexiwin_pointer_event pointerEvent;
 } flexiwin_state;

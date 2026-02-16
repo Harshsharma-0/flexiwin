@@ -15,6 +15,7 @@
 
 typedef struct flexiwin_egl_info {
   wl_egl_window *window;
+  wl_surface *surface;
   EGLint *ctx_attribs;
   EGLint *config_attribs;
 
@@ -28,7 +29,10 @@ typedef struct flexiwin_egl_info {
 
 inline void flexiwin_enable_gl(flexiwin_state *state,
                                flexiwin_egl_info *egl_info) {
-  state->readyMask |= FLEXI_WIN_EGL_ENABLE;
+  egl_info->window = NULL;
+  egl_info->context = EGL_NO_CONTEXT;
+  egl_info->display = EGL_NO_DISPLAY;
+  egl_info->surface = (wl_surface *)EGL_NO_SURFACE;
   state->egl_info = egl_info;
 };
 int flexiwin_init(flexiwin_state *state, char *appname, int width, int height,
@@ -38,4 +42,5 @@ int flexiwin_create_gl_ctx(flexiwin_state *state);
 int flexiwin_moveXY(int x, int y);
 int flexiwin_resize(int width, int height);
 int flexiwin_get_win_fd();
-int flexiwin_destroy(flexiwin_state *state, int retVal);
+void flexiwin_destroy_egl(flexiwin_egl_info *egl_info);
+void flexiwin_destroy(flexiwin_state *state);
