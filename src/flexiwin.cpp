@@ -378,5 +378,5 @@ void flexiwin_destroy(flexiwinState *state) {
     wl_display_disconnect(state->display);
 
   if (state->appname != NULL)
-    delete state->appname
+    delete state->appname;
 };
