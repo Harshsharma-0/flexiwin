@@ -8,8 +8,7 @@
 #include "./wayland-callback.hpp"
 #include "./xdg-output-client-protocol.h"
 #include "./xdg-shell-client-protocol.h"
-#include "flexiwin/wayland-callback.hpp"
-#include "flexiwin/xdg/xdg.hpp"
+#include "./xdg/xdg.hpp"
 #include <GLES2/gl2.h>
 #include <cstdint>
 
