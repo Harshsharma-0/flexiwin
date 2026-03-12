@@ -1,6 +1,8 @@
 #include "flexiwin/flexiwin.hpp"
 #include "flexiwin/common.hpp"
 #include "flexiwin/events/common.hpp"
+#include "flexiwin/wayland-callback.hpp"
+#include "flexiwin/xdg-shell-client-protocol.h"
 
 #include <EGL/egl.h>
 #include <EGL/eglplatform.h>
@@ -222,19 +224,21 @@ static int create_egl_window(flexiwin_state *state, int width, int height) {
   return 0;
 };
 
-int flexiwin_init(flexiwin_state *state, char *appname, int width, int height,
-                  window_type type) {
+int flexiwin_init(flexiwin_state *state, const char *appname, int width,
+                  int height, window_type type) {
 
   if (width < flexiwin_min_width || height < flexiwin_min_height)
     return -1;
 
   memset(state, 0, sizeof(flexiwin_state));
+  if (appname) {
+    size_t len = strlen(appname);
+    if ((state->appname = new (std::nothrow) char[len + 1]) == nullptr)
+      return -1;
 
-  size_t len = strlen(appname);
-  state->appname = nullptr;
-  if ((state->appname = new (std::nothrow) char[len + 1]) == nullptr) {
-    return -1;
-  };
+    memcpy(state->appname, appname, len);
+    state->appname[len] = '\0';
+  }
 
   state->local_info.width = width;
   state->local_info.height = height;
@@ -242,9 +246,6 @@ int flexiwin_init(flexiwin_state *state, char *appname, int width, int height,
   state->local_info.size = width * height * sizeof(uint32_t);
   state->resize_type = window_resize_type::win_none;
   state->win_type = type;
-
-  memcpy(state->appname, appname, len);
-  state->appname[len] = '\0';
 
   if (create_start_wayland(state) != 0)
     return -1;
@@ -264,6 +265,9 @@ int flexiwin_create(flexiwin_state *state, window_mode mode) {
     if (create_buffered_win(state, width, height, type) != 0)
       return -1;
   };
+  if (state->appname != nullptr)
+    xdg_toplevel_set_title(state->xdg_surface_toplevel, state->appname);
+
   while (wl_display_roundtrip(state->display) != -1 &&
          (state->mask & FLEXI_XDG_CONFIGURED)) {
   }
@@ -332,10 +336,6 @@ int flexiwin_create_gl_ctx(flexiwin_state *state) {
 
   return 0;
 };
-int flexiwin_moveXY(int x, int y) { return 0; };
-int flexiwin_resize(int width, int height) { return 0; };
-
-int flexiwin_get_win_fd(flexiwinState *state) { return state->displayFd; }
 
 void flexiwin_destroy_egl(flexiwin_egl_info *egl_info) {
   if (egl_info->window != NULL)
@@ -379,4 +379,6 @@ void flexiwin_destroy(flexiwinState *state) {
 
   if (state->appname != NULL)
     delete state->appname;
+
+  keyboard_destroy();
 };

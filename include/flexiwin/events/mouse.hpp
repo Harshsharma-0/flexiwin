@@ -1,6 +1,8 @@
 #pragma once
 
 #include <wayland-client.h>
+struct flexiwin_pointer_event;
+typedef void (*pointer_frame_cb)(struct flexiwin_pointer_event *event);
 
 enum flexiwin_pointer_event_type {
   flexiwin_pointer_enter = 1 << 0,
@@ -17,14 +19,18 @@ struct flexiwin_pointer_event {
 
   uint32_t event_type;
   uint32_t axis_source;
-
-  float x, y;
+  union {
+    float x;
+    float y;
+    int ix;
+    int iy;
+  };
   uint32_t button, state;
   uint32_t time, serial;
 
   struct {
-    uint32_t valid;
     wl_fixed_t value;
     int32_t discrete;
   } axis[2];
+  pointer_frame_cb pointer_cb;
 };

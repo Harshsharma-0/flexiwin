@@ -24,6 +24,10 @@
  */
 #define FLEXI_MOUSE_EVENT (1 << 6)
 
+#define FLEXI_WIN_MAXIMIZED (1 << 7)
+#define FLEXI_WIN_MINIMIZED (1 << 8)
+#define FLEXI_WIN_FULLSCREEN (1 << 9)
+
 enum window_resize_type { win_none = 0, win_shrink, win_grow };
 
 struct flexiwin_egl_info;

@@ -1,8 +1,6 @@
 #include "flexiwin/wayland-callback.hpp"
 #include "flexiwin/common.hpp"
 #include <cassert>
-#include <cstring>
-#include <iostream>
 #include <sys/mman.h>
 #include <unistd.h>
 #include <xkbcommon/xkbcommon.h>
@@ -26,8 +24,14 @@ static void pointer_enter(void *data, struct wl_pointer *wl_pointer,
   struct flexiwin_pointer_event *state = (struct flexiwin_pointer_event *)data;
 
   state->event_type |= flexiwin_pointer_enter;
+#if !defined(FLEXIWIN_MOUSE_INT)
   state->x = wl_fixed_to_double(surface_x);
   state->y = wl_fixed_to_double(surface_y);
+#else
+  state->ix = (surface_x >> 8);
+  state->iy = (surface_y >> 8);
+#endif
+
   state->serial = serial;
 };
 
@@ -47,8 +51,14 @@ static void pointer_motion(void *data, struct wl_pointer *wl_pointer,
   struct flexiwin_pointer_event *state = (struct flexiwin_pointer_event *)data;
 
   state->event_type |= flexiwin_pointer_motion;
+#if !defined(FLEXIWIN_MOUSE_INT)
   state->x = wl_fixed_to_double(surface_x);
   state->y = wl_fixed_to_double(surface_y);
+#else
+  state->ix = (surface_x >> 8);
+  state->iy = (surface_y >> 8);
+#endif
+
   state->time = time;
 };
 
@@ -59,33 +69,16 @@ static void pointer_axis(void *data, struct wl_pointer *wl_pointer,
 
   state->event_type |= flexiwin_pointer_axis;
   state->time = time;
-  state->axis[axis].valid = 1;
   state->axis[axis].value = value;
 };
 
 static void pointer_frame(void *data, struct wl_pointer *wl_pointer) {
 
-  /*
-    // TODO: propagate the event data to the state manager pointer event queue
+  struct flexiwin_pointer_event *state = (struct flexiwin_pointer_event *)data;
+  if (state->pointer_cb)
+    state->pointer_cb(state);
 
-    //  xdg_toplevel_move(xdg_toplevel, wl_seat, serial);
-    // struct window_state* info = (window_state*)data;
-    //  xdg_toplevel_move(info->xdg_surface_toplevel,info->display_seat,serial);
-    //
-    xdg_toplevel_show_window_menu(info->xdg_surface_toplevel,
-    info->display_seat, serial, 0, 0);
-    //
-    xdg_toplevel_resize(info->xdg_surface_toplevel, info->display_seat,
-                        info->serial, 2);
-    //
-    xdg_toplevel_resize(info->xdg_surface_toplevel, info->display_seat,
-                        pointer_state.serial, 3);
-    // flexon::memset64(&pointer_state,0,loop);
-
-    //   pointer_state = statemanager::getNextPointerQueue();
-    // utility::strings::memset64(pointer_state,0,7);
-    */
-
+  state->event_type = 0;
 };
 
 static void pointer_axis_source(void *data, struct wl_pointer *wl_pointer,
@@ -102,7 +95,6 @@ static void pointer_axis_stop(void *data, struct wl_pointer *wl_pointer,
   struct flexiwin_pointer_event *state = (struct flexiwin_pointer_event *)data;
   state->event_type |= flexiwin_pointer_axis_stop;
   state->time = time;
-  state->axis[axis].valid = 1;
 };
 
 static void pointer_axis_discrete(void *data, struct wl_pointer *wl_pointer,
@@ -111,7 +103,6 @@ static void pointer_axis_discrete(void *data, struct wl_pointer *wl_pointer,
   struct flexiwin_pointer_event *state = (struct flexiwin_pointer_event *)data;
 
   state->event_type |= flexiwin_pointer_axis_discrete;
-  state->axis[axis].valid = 1;
   state->axis[axis].discrete = discrete;
 };
 
@@ -146,7 +137,6 @@ void keyboard_destroy() {
 void keyboard_keymap(void *data, struct wl_keyboard *wl_keyboard,
                      uint32_t format, int32_t fd, uint32_t size) {
 
-  // TODO: propagate error to thread manager to terminate all operations
   assert(format == WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1);
 
   char *key_map = (char *)mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
@@ -173,13 +163,15 @@ void keyboard_enter(void *data, struct wl_keyboard *wl_keyboard,
                     struct wl_array *keys) {
 
   flexiwin_key_event *key_state = (flexiwin_key_event *)data;
-  // key_state->event_type = flexiwin_key_enter;
+  key_state->event_type = flexiwin_key_enter;
+  key_state->serial = serial;
 };
 
 void keyboard_leave(void *data, struct wl_keyboard *wl_keyboard,
                     uint32_t serial, struct wl_surface *surface) {
   flexiwin_key_event *key_state = (flexiwin_key_event *)data;
   key_state->event_type = flexiwin_key_leave;
+  key_state->serial = serial;
 };
 
 void keyboard_key(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial,
@@ -192,10 +184,10 @@ void keyboard_key(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial,
 
   switch (state) {
   case WL_KEYBOARD_KEY_STATE_PRESSED:
-    key_state->event_type = flexiwin_key_on_press;
+    key_state->event_type = flexiwin_key_pressed;
     break;
   case WL_KEYBOARD_KEY_STATE_RELEASED:
-    key_state->event_type = flexiwin_key_on_release;
+    key_state->event_type = flexiwin_key_released;
     break;
   };
 };
@@ -240,20 +232,16 @@ static void seat_capability_callback(void *data, struct wl_seat *wl_seat,
 };
 
 static void seat_name_callback(void *data, struct wl_seat *wl_seat,
-                               const char *name) {
-  std::cout << "[seat name] " << name << std::endl;
-};
+                               const char *name) {};
 
 const struct wl_seat_listener wl_seat_obj = {
     .capabilities = seat_capability_callback, .name = seat_name_callback};
 
 static void surface_pixel_format(void *data, wl_shm *wl_shm, uint32_t format) {
-  switch (format) {
-  case WL_SHM_FORMAT_ARGB8888:
-    ((flexiwin_state *)data)->buffer_format = WL_SHM_FORMAT_ARGB8888;
+  if (format == WL_SHM_FORMAT_ARGB8888) {
+    ((flexiwin_state *)data)->buffer_format = (wl_shm_format)format;
     ((flexiwin_state *)data)->mask |= FLEXI_FORMAT_OK;
-    break;
-  };
+  }
 };
 
 const struct wl_shm_listener wl_shm_callback = {.format = surface_pixel_format};
@@ -269,7 +257,6 @@ static void wl_output_mode(void *data, struct wl_output *wl_output,
 static void wl_output_done(void *data, struct wl_output *wl_output) {
   flexiwinState *info = (flexiwinState *)data;
   info->configured = true;
-  std::cout << "[output done] " << std::endl;
 };
 static void wl_output_scale(void *data, struct wl_output *wl_output,
                             int32_t factor) {};

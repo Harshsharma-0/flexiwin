@@ -3,9 +3,9 @@
 #include "flexiwin/events/common.hpp"
 #include "flexiwin/flexiwin.hpp"
 #include "flexiwin/xdg-shell-client-protocol.h"
-#include <iostream>
 #include <wayland-egl-core.h>
 #include <wayland-egl.h>
+#include <wayland-util.h>
 
 static void xdg_wm_base_ping_callback(void *data,
                                       struct xdg_wm_base *xdg_wm_base,
@@ -46,7 +46,7 @@ static void xdg_surface_callback_toplevel_configure(
     info->local_info.stride = width * sizeof(uint32_t);
 
     wl_buffer_destroy(info->display_buffer);
-    info->display_buffer = info->display_buffer =
+    info->display_buffer =
         wl_shm_pool_create_buffer(info->display_shm_pool, 0, width, height,
                                   info->local_info.stride, info->buffer_format);
     wl_surface_attach(info->surface, info->display_buffer, 0, 0);
@@ -86,22 +86,15 @@ static void xdg_output_logical_size(void *data,
   info->display_info.width = width;
   info->display_info.stride = width * sizeof(uint32_t);
   info->display_info.size = info->display_info.stride * height;
-  std::cout << "[xdg size] " << width << " : " << height << std::endl;
 };
 
 static void xdg_output_done(void *data, struct zxdg_output_v1 *zxdg_output_v1) {
-  std::cout << "[xdg done] " << std::endl;
 };
-
 static void xdg_output_name(void *data, struct zxdg_output_v1 *zxdg_output_v1,
-                            const char *name) {
-  std::cout << "[xdg name] " << name << std::endl;
-};
+                            const char *name) {};
 static void xdg_output_description(void *data,
                                    struct zxdg_output_v1 *zxdg_output_v1,
-                                   const char *description) {
-  std::cout << "[xdg description] " << description << std::endl;
-};
+                                   const char *description) {};
 
 const struct zxdg_output_v1_listener xdg_output_listener = {
     .logical_position = xdg_output_logical_position,

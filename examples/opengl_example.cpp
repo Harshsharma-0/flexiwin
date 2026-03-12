@@ -1,12 +1,11 @@
 #include "flexiwin/flexiwin.hpp"
+#include <EGL/egl.h>
 #include <GLES2/gl2.h>
-#include <iostream>
-#include <wayland-client-core.h>
 
 flexiwin_state wmstate = {0};
 flexiwin_egl_info eglstate = {0};
 
-const char *appname = "iuf";
+const char *appname = "flexiwin opengl example";
 
 EGLint fb_attr[] = {EGL_SURFACE_TYPE,
                     EGL_WINDOW_BIT,
@@ -26,7 +25,7 @@ int main() {
   eglstate.ctx_attribs = ctx_attr;
   eglstate.config_attribs = fb_attr;
   eglstate.num_cfg = 1;
-  flexiwin_init(&wmstate, (char *)appname, 300, 300, window_type::win_dynamic);
+  flexiwin_init(&wmstate, appname, 300, 300, window_type::win_dynamic);
 
   flexiwin_enable_gl(&wmstate, &eglstate);
   flexiwin_create(&wmstate, window_mode::customSize);
