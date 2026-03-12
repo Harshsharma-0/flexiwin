@@ -95,3 +95,4 @@ int main() {
 ```
 
 > [!NOTE]
+  Refer to example directory for more example and usages.
