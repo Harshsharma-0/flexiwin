@@ -2,6 +2,7 @@
 #include "flexiwin/common.hpp"
 #include "flexiwin/events/common.hpp"
 #include "flexiwin/wayland-callback.hpp"
+#include "flexiwin/xdg-output-client-protocol.h"
 #include "flexiwin/xdg-shell-client-protocol.h"
 
 #include <EGL/egl.h>
@@ -51,8 +52,6 @@ static void register_global(void *data, wl_registry *registry, uint32_t name,
   if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
     bypass->display_xdg_base = (xdg_wm_base *)wl_registry_bind(
         registry, name, &xdg_wm_base_interface, 5);
-    if (bypass->display_xdg_base == NULL)
-      return;
 
     xdg_wm_base_add_listener(bypass->display_xdg_base,
                              &xdg_wm_base_callback_listener, data);
@@ -68,9 +67,6 @@ static void register_global(void *data, wl_registry *registry, uint32_t name,
   if (strcmp(interface, zxdg_output_manager_v1_interface.name) == 0) {
     bypass->xdg_output_manager = (zxdg_output_manager_v1 *)wl_registry_bind(
         registry, name, &zxdg_output_manager_v1_interface, 3);
-    bypass->xdg_output = zxdg_output_manager_v1_get_xdg_output(
-        bypass->xdg_output_manager, bypass->display_output);
-    zxdg_output_v1_add_listener(bypass->xdg_output, &xdg_output_listener, data);
   }
 }
 
@@ -81,42 +77,6 @@ static void remove_global(void *data, wl_registry *registry, uint32_t name) {
 static const struct wl_registry_listener display_registry_listener = {
     .global = register_global, .global_remove = remove_global};
 
-static int allocateShm(flexiwin_state *state, int width, int height,
-                       int tmp_size) {
-
-  if (width < flexiwin_min_width || height < flexiwin_min_height)
-    return -1;
-
-  char name[] = "/wl_shm-XXXXXX";
-  randname(name + sizeof(name) - 7);
-
-  state->shmFd = -1;
-  if ((state->shmFd = shm_open(name, O_RDWR | O_CREAT | O_EXCL, 0600)) < 0) {
-    std::cout << "[SHM] Creation failed : " << std::endl;
-    return -1;
-  }
-
-  shm_unlink(name);
-  if (ftruncate(state->shmFd, tmp_size) < 0) {
-    std::cout << "FD failed" << std::endl;
-    close(state->shmFd);
-    return -1;
-  }
-
-  state->rawPixelSize = sizeof(uint32_t) * width * height;
-  if ((state->rawPixels =
-           (uint32_t *)mmap(NULL, state->rawPixelSize, PROT_READ | PROT_WRITE,
-                            MAP_SHARED, state->shmFd, 0)) == MAP_FAILED) {
-    std::cout << "mapping failed " << std::endl;
-    close(state->shmFd);
-    return -1;
-  };
-  return 0;
-};
-static void destroy_shm(flexiwin_state *state) {
-  close(state->shmFd);
-  munmap(state->rawPixels, state->rawPixelSize);
-}
 static void add_xdg_listeners(flexiwin_state *state, int32_t max_width,
                               int32_t max_height) {
 
@@ -145,6 +105,10 @@ static int create_start_wayland(flexiwin_state *state) {
 
   wl_registry_add_listener(state->registry, &display_registry_listener, state);
   wl_display_roundtrip(state->display);
+  state->xdg_output = zxdg_output_manager_v1_get_xdg_output(
+      state->xdg_output_manager, state->display_output);
+
+  zxdg_output_v1_add_listener(state->xdg_output, &xdg_output_listener, state);
 
   if (state->display_compositor == NULL)
     return -1;
@@ -170,44 +134,11 @@ static int create_start_wayland(flexiwin_state *state) {
 
   while (wl_display_roundtrip(state->display) != -1 && !state->configured) {
   }
-  if (state->display_xdg_base == NULL || !(state->mask & FLEXI_FORMAT_OK))
+  if (state->display_xdg_base == NULL)
     return -1;
-
-  state->mask &= ~(FLEXI_FORMAT_OK);
 
   return 0;
 }
-static int create_buffered_win(flexiwin_state *state, int width, int height,
-                               window_type type) {
-  int tmp_width = type == win_static ? width : state->display_info.width;
-  int tmp_height = type == win_static ? height : state->display_info.height;
-  int tmp_size =
-      type != win_static ? state->display_info.size : state->local_info.size;
-
-  if (allocateShm(state, tmp_width, tmp_height, tmp_size) < 0)
-    return -1;
-
-  state->display_shm_pool =
-      wl_shm_create_pool(state->display_shm, state->shmFd, tmp_size);
-  add_xdg_listeners(state, tmp_width, tmp_height);
-
-  if (state->display_shm_pool == NULL) {
-    destroy_shm(state);
-    return -1;
-  }
-
-  if (type != window_type::win_static) {
-    tmp_width = width;
-    tmp_height = height;
-  }
-  state->display_buffer = wl_shm_pool_create_buffer(
-      state->display_shm_pool, 0, tmp_width, tmp_height,
-      state->local_info.stride, state->buffer_format);
-
-  wl_surface_attach(state->surface, state->display_buffer, 0, 0);
-  wl_surface_commit(state->surface);
-  return 0;
-};
 
 static int create_egl_window(flexiwin_state *state, int width, int height) {
   wl_egl_window *egl_window =
@@ -257,14 +188,13 @@ int flexiwin_create(flexiwin_state *state, window_mode mode) {
   int32_t width = state->local_info.width;
   int32_t height = state->local_info.height;
   window_type type = state->win_type;
-  if (state->egl_info != NULL) {
-    std::cout << "[flexiwin ] Opengl Enabled" << std::endl;
-    if (create_egl_window(state, width, height) != 0)
-      return -1;
-  } else {
-    if (create_buffered_win(state, width, height, type) != 0)
-      return -1;
-  };
+
+  if (state->egl_info == NULL)
+    return -1;
+
+  if (create_egl_window(state, width, height) != 0)
+    return -1;
+
   if (state->appname != nullptr)
     xdg_toplevel_set_title(state->xdg_surface_toplevel, state->appname);
 
@@ -360,10 +290,9 @@ static void flexiwin_destroy_xdg(flexiwin_state *state) {
 
 void flexiwin_destroy(flexiwinState *state) {
 
-  if (state->display_shm_pool) {
+  if (state->display_shm_pool)
     wl_shm_pool_destroy(state->display_shm_pool);
-    destroy_shm(state);
-  };
+
   flexiwin_destroy_xdg(state);
   if (state->surface && state->egl_info == NULL)
     wl_surface_destroy(state->surface);

@@ -238,10 +238,6 @@ const struct wl_seat_listener wl_seat_obj = {
     .capabilities = seat_capability_callback, .name = seat_name_callback};
 
 static void surface_pixel_format(void *data, wl_shm *wl_shm, uint32_t format) {
-  if (format == WL_SHM_FORMAT_ARGB8888) {
-    ((flexiwin_state *)data)->buffer_format = (wl_shm_format)format;
-    ((flexiwin_state *)data)->mask |= FLEXI_FORMAT_OK;
-  }
 };
 
 const struct wl_shm_listener wl_shm_callback = {.format = surface_pixel_format};

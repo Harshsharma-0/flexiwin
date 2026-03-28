@@ -38,22 +38,7 @@ static void xdg_surface_callback_toplevel_configure(
     return;
 
   if (width > 0 && height > 0) {
-    if (info->egl_info != NULL) {
-      wl_egl_window_resize(info->egl_info->window, width, height, 0, 0);
-      return;
-    };
-    uint32_t size = width * height * sizeof(uint32_t);
-    info->local_info.stride = width * sizeof(uint32_t);
-
-    wl_buffer_destroy(info->display_buffer);
-    info->display_buffer =
-        wl_shm_pool_create_buffer(info->display_shm_pool, 0, width, height,
-                                  info->local_info.stride, info->buffer_format);
-    wl_surface_attach(info->surface, info->display_buffer, 0, 0);
-    wl_surface_commit(info->surface);
-
-    info->local_info.size = size;
-    info->ev_mask |= FLEXI_WINDOW_RESIZED;
+    wl_egl_window_resize(info->egl_info->window, width, height, 0, 0);
   }
 }
 

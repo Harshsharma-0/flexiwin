@@ -33,7 +33,6 @@ typedef struct flexiwin_state {
 
   struct zxdg_output_v1 *xdg_output;
   struct zxdg_output_manager_v1 *xdg_output_manager;
-  wl_shm_format buffer_format;
 
   struct display_info {
     int32_t width;
@@ -54,13 +53,10 @@ typedef struct flexiwin_state {
   flexiwin_egl_info *egl_info;
   window_resize_type resize_type;
   window_type win_type;
-  int shmFd;
   int displayFd;
   uint32_t evSerial;
   bool configured;
 
-  size_t rawPixelSize;
-  uint32_t *rawPixels;
   int winX, winY;
 
   size_t mask;

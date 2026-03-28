@@ -40,8 +40,6 @@ target_link_libraries(flexiwin ${WAYLAND_LIBRARIES} ${EGL_LIBRARIES} xkbcommon r
 
 
 # Example executable
-add_executable(hello_world examples/hello_world.cpp)
 add_executable(opengl_example examples/opengl_example.cpp)
 
-target_link_libraries(hello_world PRIVATE flexiwin)
 target_link_libraries(opengl_example PRIVATE flexiwin ${OPENGL_LIBRARIES})
