@@ -34,10 +34,12 @@ static void xdg_surface_callback_toplevel_configure(
 
   flexiwinState *info = (flexiwinState *)data;
 
-  if (info->win_type == window_type::win_static)
+  if (info->win_type == window_type_static)
     return;
 
   if (width > 0 && height > 0) {
+    info->local_info.height = height;
+    info->local_info.width = width;
     wl_egl_window_resize(info->egl_info->window, width, height, 0, 0);
   }
 }

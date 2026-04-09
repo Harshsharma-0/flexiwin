@@ -12,6 +12,9 @@
 constexpr int flexiwin_min_width = 250;
 constexpr int flexiwin_min_height = 250;
 
+typedef bool (*flexiwin_while_running)(void *data);
+typedef void (*flexiwin_on_exit)(void *data);
+
 typedef struct flexiwin_state {
   char *appname;
 
@@ -46,18 +49,19 @@ typedef struct flexiwin_state {
   struct local_info {
     int32_t width;
     int32_t height;
-    int32_t stride;
-    int32_t size;
   } local_info;
 
   flexiwin_egl_info *egl_info;
-  window_resize_type resize_type;
-  window_type win_type;
+  int resize_type;
+  int win_type;
   int displayFd;
   uint32_t evSerial;
   bool configured;
 
-  int winX, winY;
+  flexiwin_while_running whileRunning;
+  flexiwin_on_exit onExit;
+
+  void *data;
 
   size_t mask;
   size_t ev_mask;

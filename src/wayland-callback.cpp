@@ -76,9 +76,8 @@ static void pointer_frame(void *data, struct wl_pointer *wl_pointer) {
 
   struct flexiwin_pointer_event *state = (struct flexiwin_pointer_event *)data;
   if (state->pointer_cb)
-    state->pointer_cb(state);
+    state->pointer_cb(state,state->data);
 
-  state->event_type = 0;
 };
 
 static void pointer_axis_source(void *data, struct wl_pointer *wl_pointer,
@@ -163,14 +162,15 @@ void keyboard_enter(void *data, struct wl_keyboard *wl_keyboard,
                     struct wl_array *keys) {
 
   flexiwin_key_event *key_state = (flexiwin_key_event *)data;
-  key_state->event_type = flexiwin_key_enter;
+  key_state->callback(flexiwin_key_enter , -1 , 0,serial,key_state->data);
   key_state->serial = serial;
+
 };
 
 void keyboard_leave(void *data, struct wl_keyboard *wl_keyboard,
                     uint32_t serial, struct wl_surface *surface) {
   flexiwin_key_event *key_state = (flexiwin_key_event *)data;
-  key_state->event_type = flexiwin_key_leave;
+  key_state->callback(flexiwin_key_leave , -1 , 0,serial,key_state->data);
   key_state->serial = serial;
 };
 
@@ -179,17 +179,20 @@ void keyboard_key(void *data, struct wl_keyboard *wl_keyboard, uint32_t serial,
 
   flexiwin_key_event *key_state = (flexiwin_key_event *)data;
   xkb_keysym_t sym = xkb_state_key_get_one_sym(key_xkb_state, key + 8);
-  key_state->serial = serial;
-  key_state->key = sym;
+  uint32_t ev_type = 0;
 
   switch (state) {
   case WL_KEYBOARD_KEY_STATE_PRESSED:
-    key_state->event_type = flexiwin_key_pressed;
+    ev_type = flexiwin_key_pressed;
     break;
   case WL_KEYBOARD_KEY_STATE_RELEASED:
-    key_state->event_type = flexiwin_key_released;
+    ev_type = flexiwin_key_released;
     break;
   };
+
+  key_state->callback(ev_type, time ,sym,serial,key_state->data);
+  key_state->serial = serial;
+
 };
 
 void keyboard_modifiers(void *data, struct wl_keyboard *wl_keyboard,

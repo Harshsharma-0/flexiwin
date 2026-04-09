@@ -2,7 +2,7 @@
 
 #include <wayland-client.h>
 struct flexiwin_pointer_event;
-typedef void (*pointer_frame_cb)(struct flexiwin_pointer_event *event);
+typedef void (*flexiwin_pointer_frame_cb)(struct flexiwin_pointer_event *event,void *data);
 
 enum flexiwin_pointer_event_type {
   flexiwin_pointer_enter = 1 << 0,
@@ -32,5 +32,6 @@ struct flexiwin_pointer_event {
     wl_fixed_t value;
     int32_t discrete;
   } axis[2];
-  pointer_frame_cb pointer_cb;
+  flexiwin_pointer_frame_cb pointer_cb;
+  void *data;
 };

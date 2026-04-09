@@ -28,20 +28,24 @@
 #define FLEXI_WIN_MINIMIZED (1 << 8)
 #define FLEXI_WIN_FULLSCREEN (1 << 9)
 
-enum window_resize_type { win_none = 0, win_shrink, win_grow };
+enum  { 
+  window_resize_type_none = 0, 
+  window_resize_type_shrink,
+  window_resize_type_grow 
+};
 
 struct flexiwin_egl_info;
 
-enum window_type {
-  win_static,
-  win_dynamic,
+enum {
+  window_type_static,
+  window_type_dynamic,
 };
 
-enum window_mode {
-  fullScreen = 0,
-  minimized,
-  maximized,
-  customSize,
-  closed,
-  focused,
+enum  {
+  window_mode_fullScreen = 0,
+  window_mode_minimized,
+  window_mode_maximized,
+  window_mode_customSize,
+  window_mode_closed,
+  window_mode_focused,
 };

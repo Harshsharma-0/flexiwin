@@ -156,7 +156,7 @@ static int create_egl_window(flexiwin_state *state, int width, int height) {
 };
 
 int flexiwin_init(flexiwin_state *state, const char *appname, int width,
-                  int height, window_type type) {
+                  int height, int window_type) {
 
   if (width < flexiwin_min_width || height < flexiwin_min_height)
     return -1;
@@ -173,21 +173,18 @@ int flexiwin_init(flexiwin_state *state, const char *appname, int width,
 
   state->local_info.width = width;
   state->local_info.height = height;
-  state->local_info.stride = width * sizeof(uint32_t);
-  state->local_info.size = width * height * sizeof(uint32_t);
-  state->resize_type = window_resize_type::win_none;
-  state->win_type = type;
+  state->resize_type = window_resize_type_none;
+  state->win_type = window_type;
 
   if (create_start_wayland(state) != 0)
     return -1;
   return 0;
 };
 
-int flexiwin_create(flexiwin_state *state, window_mode mode) {
+int flexiwin_create(flexiwin_state *state) {
 
   int32_t width = state->local_info.width;
   int32_t height = state->local_info.height;
-  window_type type = state->win_type;
 
   if (state->egl_info == NULL)
     return -1;
